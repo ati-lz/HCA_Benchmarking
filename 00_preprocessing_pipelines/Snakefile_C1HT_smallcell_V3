@@ -1,0 +1,277 @@
+from os import listdir
+import yaml
+
+#Path to sample fastq files
+fastq_path = '/project/devel/HCA/Stanford/all_runs/rawdata/'
+human_gtf = '/project/devel/alafzi/ref_genomes/human/hsa_gencode.v28.annotation.gtf'
+human_STAR_genome= '/project/devel/alafzi/ref_genomes/human/STARgenome'
+mouse_gtf = '/project/devel/alafzi/ref_genomes/mouse/mmu_gencode.vM17.primary_assembly.annotation.gtf'
+mouse_STAR_genome= '/project/devel/alafzi/ref_genomes/mouse/STARgenome'
+mixed_gtf = '/project/devel/alafzi/ref_genomes/mixed/hsap_mmus_can_combined_gtf.gtf'
+mixed_STAR_genome= '/project/devel/alafzi/ref_genomes/mixed/STARgenome'
+
+zUMI_path='/apps/ZUMIS/2.2'
+bc_list2= '/project/devel/HCA/Stanford/C1HT_cellBC_cleaned.txt'
+protocol= 'C1HTsmall'
+
+#Loading modules
+#shell.executable("!/usr/bin/env bash")
+shell.prefix("module unload gcc/latest; module load gcc/6.3.0; module load XZ/5.2.2; module load COREUTILS/8.21; module load CONDA/4.3.11_PYTHON3; module load java/latest; module load SAMTOOLS/1.6; module load BAMTOOLS/2.3.0 ; module load STAR/2.6.0c; module load R/3.5.0; module load hdf5/1.10.1; module load PIGZ/2.3.3; module load ZUMIS/2.2; ")
+
+#Samples
+sample_files = listdir(fastq_path)
+SAMPLES_init = list(set("_".join(i.split("_")[0:4]) for i in sample_files))
+SAMPLES = []
+for sid in SAMPLES_init:
+    if sid.startswith("s"):
+        SAMPLES.append(sid)
+
+rule all:
+    input:
+        "multigenome_C1HTsmall_V3/"+protocol+".hsap.full.SCE.Robj",
+        "multigenome_C1HTsmall_V3/"+protocol+".mmus.full.SCE.Robj"
+
+rule create_yaml:
+    input:
+         yaml = "pipeline_general.yaml"
+    output:
+        yamlOut_hsap="YAMLs/"+protocol+"_hsap_{sample}.yaml",
+        yamlOut_mmus="YAMLs/"+protocol+"_mmus_{sample}.yaml",
+        yamlOut_mixed="YAMLs/"+protocol+"_mixed_{sample}.yaml"
+    run:
+        #fname = input
+
+        stream = open(input.yaml, 'r')
+        data_hsap = yaml.load(stream)
+
+        data_hsap['project'] = protocol
+        data_hsap['sequence_files']['file1']['name'] = fastq_path+ wildcards.sample +'_R1_001.fastq.gz'
+        data_hsap['sequence_files']['file1']['base_definition'][0] = 'BC(1-6)'
+        data_hsap['sequence_files']['file1']['base_definition'][1] = 'UMI(7-11)'
+        data_hsap['sequence_files']['file2']['name'] = fastq_path+ wildcards.sample +'_R2_001.fastq.gz'
+        data_hsap['sequence_files']['file2']['base_definition'][0] = 'cDNA(1-85)'
+        data_hsap['num_threads'] = 8
+        #data_hsap['make_stats'] = "yes"
+        #data_hsap['which_Stage'] = 'Counting'
+        data_hsap['barcodes']['barcode_file'] = bc_list2
+        #data_hsap['barcodes']['barcode_num'] = 3000
+        data_hsap['reference']['STAR_index'] = '/project/devel/alafzi/ref_genomes/human/STARgenome'
+        data_hsap['reference']['GTF_file'] = '/project/devel/alafzi/ref_genomes/human/hsa_gencode.v28.annotation.gtf'
+        data_hsap['reference']['additional_STAR_params'] = '--limitOutSJcollapsed 4000000 --limitSjdbInsertNsj 4000000'
+        data_hsap['out_dir'] = "/project/devel/alafzi/SC_Protocols/Version3/multigenome_C1HTsmall_V3/"+wildcards.sample+"_human"
+        with open(output.yamlOut_hsap, 'w') as out_hsap:
+            yaml.dump(data_hsap, out_hsap, default_flow_style=False)
+        data_mmus = data_hsap
+        data_mmus['reference']['STAR_index'] = '/project/devel/alafzi/ref_genomes/mouse/STARgenome'
+        data_mmus['reference']['GTF_file'] = '/project/devel/alafzi/ref_genomes/mouse/mmu_gencode.vM17.primary_assembly.annotation.gtf'
+        data_mmus['out_dir'] = "/project/devel/alafzi/SC_Protocols/Version3/multigenome_C1HTsmall_V3/"+wildcards.sample+"_mouse"
+        with open(output.yamlOut_mmus, 'w') as out_mmus:
+            yaml.dump(data_mmus, out_mmus, default_flow_style=False)
+        data_mixed = data_hsap
+        data_mixed['reference']['STAR_index'] = '/project/devel/alafzi/ref_genomes/mixed/STARgenome'
+        data_mixed['reference']['GTF_file'] = '/project/devel/alafzi/ref_genomes/mixed/hsap_mmus_can_combined_gtf.gtf'
+        data_mixed['out_dir'] = "/project/devel/alafzi/SC_Protocols/Version3/multigenome_C1HTsmall_V3/"+wildcards.sample+"_mixed"
+        with open(output.yamlOut_mixed, 'w') as out_mixed:
+            yaml.dump(data_mixed, out_mixed, default_flow_style=False)
+
+rule fix_yaml:
+    input: 
+        yamlin_hsap="YAMLs/"+protocol+"_hsap_{sample}.yaml",
+        yamlin_mmus="YAMLs/"+protocol+"_mmus_{sample}.yaml",
+        yamlin_mixed="YAMLs/"+protocol+"_mixed_{sample}.yaml"
+    output:
+        yamlOutFix_hsap="YAMLs_fixed/"+protocol+"_hsap_{sample}_fixed.yaml",
+        yamlOutFix_mmus="YAMLs_fixed/"+protocol+"_mmus_{sample}_fixed.yaml",
+        yamlOutFix_mixed="YAMLs_fixed/"+protocol+"_mixed_{sample}_fixed.yaml"
+    shell:
+        """
+       sed 's/make_stats: true/make_stats: yes/g' {input.yamlin_hsap} > {output.yamlOutFix_hsap}
+       sed 's/make_stats: true/make_stats: yes/g' {input.yamlin_mmus} > {output.yamlOutFix_mmus}
+       sed 's/make_stats: true/make_stats: yes/g' {input.yamlin_mixed} > {output.yamlOutFix_mixed}
+       """
+       
+
+rule zUMI_run:
+    input:
+        yaml_hsap="YAMLs_fixed/"+protocol+"_hsap_{sample}_fixed.yaml",
+        yaml_mmus="YAMLs_fixed/"+protocol + "_mmus_{sample}_fixed.yaml",
+        yaml_mixed="YAMLs_fixed/"+protocol + "_mixed_{sample}_fixed.yaml"
+
+    output:
+        dir='multigenome_C1HTsmall_V3/{sample}_human/'+protocol+'.filtered.tagged.Aligned.out.bam',
+        dir_file11='multigenome_C1HTsmall_V3/{sample}_human/zUMIs_output/'+protocol+'kept_barcodes.txt',
+        dir_file111='multigenome_C1HTsmall_V3/{sample}_human/zUMIs_output/expression/'+protocol+'.dgecounts.rds',
+        dir_file1111='multigenome_C1HTsmall_V3/{sample}_human/zUMIs_output/stats/'+protocol+'.genecounts.txt',
+        dir_file11111='multigenome_C1HTsmall_V3/{sample}_human/zUMIs_output/stats/'+protocol+'.UMIcounts.txt',
+        dir_file111111='multigenome_C1HTsmall_V3/{sample}_human/zUMIs_output/stats/'+protocol+'.bc.READcounts.rds',
+        dir2='multigenome_C1HTsmall_V3/{sample}_mouse/'+protocol+'.filtered.tagged.Aligned.out.bam',
+        dir_file22='multigenome_C1HTsmall_V3/{sample}_mouse/zUMIs_output/'+protocol+'kept_barcodes.txt',
+        dir_file222='multigenome_C1HTsmall_V3/{sample}_mouse/zUMIs_output/expression/'+protocol+'.dgecounts.rds',
+        dir_file2222='multigenome_C1HTsmall_V3/{sample}_mouse/zUMIs_output/stats/'+protocol+'.genecounts.txt',
+        dir_file22222='multigenome_C1HTsmall_V3/{sample}_mouse/zUMIs_output/stats/'+protocol+'.UMIcounts.txt',
+        dir_file222222='multigenome_C1HTsmall_V3/{sample}_mouse/zUMIs_output/stats/'+protocol+'.bc.READcounts.rds',
+        dir3='multigenome_C1HTsmall_V3/{sample}_mixed/'+protocol+'.filtered.tagged.Aligned.out.bam',
+        dir_file33='multigenome_C1HTsmall_V3/{sample}_mixed/zUMIs_output/'+protocol+'kept_barcodes.txt',
+        dir_file333='multigenome_C1HTsmall_V3/{sample}_mixed/zUMIs_output/expression/'+protocol+'.dgecounts.rds'
+        
+
+    shell:
+        """
+        cd multigenome_C1HTsmall_V3/{wildcards.sample}_human
+        bash {zUMI_path}/zUMIs-master.sh -y ../../{input.yaml_hsap}
+        cd ../{wildcards.sample}_mouse
+        bash {zUMI_path}/zUMIs-master.sh -y ../../{input.yaml_mmus}
+        cd ../{wildcards.sample}_mixed
+        bash {zUMI_path}/zUMIs-master.sh -y ../../{input.yaml_mixed}
+        cd ../..
+       """
+
+
+
+rule Big_Bam_to_SAM:
+    input: 
+        'multigenome_C1HTsmall_V3/{sample}_mixed/'+protocol+'.filtered.tagged.Aligned.out.bam'
+    output: 
+        'multigenome_C1HTsmall_V3/{sample}_mixed/'+protocol+'.demuxready.sam'
+    shell:
+        """
+        samtools view -h {input} > {output}
+        """
+
+rule cellBC_detected:
+    input:
+        reads_per_cell= 'multigenome_C1HTsmall_V3/{sample}_mixed/zUMIs_output/'+protocol+'kept_barcodes.txt'
+    output:
+        'multigenome_C1HTsmall_V3/{sample}_mixed/cell_barcodes.txt'
+    shell:
+        """
+        sed '1d' {input.reads_per_cell} | cut -d ',' -f1 > {output}
+        """
+rule demux_cells:
+    input:
+        tagged_sam= 'multigenome_C1HTsmall_V3/{sample}_mixed/'+protocol+'.demuxready.sam',
+        detected_BC= 'multigenome_C1HTsmall_V3/{sample}_mixed/cell_barcodes.txt'
+    output:
+        demux_dir= 'multigenome_C1HTsmall_V3/{sample}_mixed/demuxed_cells_sam'
+    shell:
+         """
+         mkdir {output.demux_dir}
+         python SAM_cellBC_demultiplexing_V3_corrected.py {input.tagged_sam} {input.detected_BC} {protocol} {wildcards.sample} {output.demux_dir}
+         """
+
+rule doublet_species:
+    input:
+        demux_dir= 'multigenome_C1HTsmall_V3/{sample}_mixed/demuxed_cells_sam'
+    output:
+        out1= 'multigenome_C1HTsmall_V3/{sample}_mixed/doublet_species/doublet_table.txt',
+        out2= 'multigenome_C1HTsmall_V3/{sample}_mixed/doublet_species/doublet_table_reads.txt',
+        out3= 'multigenome_C1HTsmall_V3/{sample}_mixed/doublet_species/Only_human_cell_IDs.txt',
+        out4= 'multigenome_C1HTsmall_V3/{sample}_mixed/doublet_species/Only_mouse_cell_IDs.txt',
+        out5= 'multigenome_C1HTsmall_V3/{sample}_mixed/doublet_species/Only_dog_cell_IDs.txt',
+        out6= 'multigenome_C1HTsmall_V3/{sample}_mixed/doublet_species/Only_human_cell_IDs_BAMs.txt'
+
+    shell:
+        """
+        python doublet_rate_V2.py {input.demux_dir} {output.out1} {output.out2} {output.out3} {output.out4} {output.out5} {output.out6}
+
+        """
+
+rule prepare_R_inputs:
+    input:
+        hsap_Exprs= expand('multigenome_C1HTsmall_V3/{sample}_human/zUMIs_output/expression/'+protocol+'.dgecounts.rds',sample=SAMPLES),
+        mmus_Exprs= expand('multigenome_C1HTsmall_V3/{sample}_mouse/zUMIs_output/expression/'+protocol+'.dgecounts.rds',sample=SAMPLES),
+        hsap_n_Reads= expand('multigenome_C1HTsmall_V3/{sample}_human/zUMIs_output/'+protocol+'kept_barcodes.txt',sample=SAMPLES),
+        hsap_n_Genes= expand('multigenome_C1HTsmall_V3/{sample}_human/zUMIs_output/stats/'+protocol+'.genecounts.txt',sample=SAMPLES),
+        hsap_n_UMIs= expand('multigenome_C1HTsmall_V3/{sample}_human/zUMIs_output/stats/'+protocol+'.UMIcounts.txt',sample=SAMPLES),
+        hsap_n_Features= expand('multigenome_C1HTsmall_V3/{sample}_human/zUMIs_output/stats/'+protocol+'.bc.READcounts.rds',sample=SAMPLES),
+        mmus_n_Reads= expand('multigenome_C1HTsmall_V3/{sample}_mouse/zUMIs_output/'+protocol+'kept_barcodes.txt',sample=SAMPLES),
+        mmus_n_Genes= expand('multigenome_C1HTsmall_V3/{sample}_mouse/zUMIs_output/stats/'+protocol+'.genecounts.txt',sample=SAMPLES),
+        mmus_n_UMIs= expand('multigenome_C1HTsmall_V3/{sample}_mouse/zUMIs_output/stats/'+protocol+'.UMIcounts.txt',sample=SAMPLES),
+        mmus_n_Features= expand('multigenome_C1HTsmall_V3/{sample}_mouse/zUMIs_output/stats/'+protocol+'.bc.READcounts.rds',sample=SAMPLES),
+        species_info= expand('multigenome_C1HTsmall_V3/{sample}_mixed/doublet_species/doublet_table_reads.txt',sample=SAMPLES)
+        #VCF_file= expand('multigenome_C1HTsmall_V3/mpileup/{sample}.mpileup.full.vcf.gz',sample=SAMPLES)
+    
+    output:
+        hsapExp_list="multigenome_C1HTsmall_V3/"+protocol+'_Hsap_expression_list.txt',
+        mmusExp_list="multigenome_C1HTsmall_V3/"+protocol+'_Mmus_expression_list.txt',
+        hsap_nReads_list="multigenome_C1HTsmall_V3/"+protocol+'_Hsap_NumberOfReads_list.txt',
+        hsap_nUMIs_list="multigenome_C1HTsmall_V3/"+protocol+'_Hsap_NumberOfUMIs_list.txt',
+        hsap_nGenes_list="multigenome_C1HTsmall_V3/"+protocol+'_Hsap_NumberOfGenes_list.txt',
+        hsap_nFeatures_list="multigenome_C1HTsmall_V3/"+protocol+'_Hsap_NumberOfFeatures_list.txt',
+        mmus_nReads_list="multigenome_C1HTsmall_V3/"+protocol+'_Mmus_NumberOfReads_list.txt',
+        mmus_nUMIs_list="multigenome_C1HTsmall_V3/"+protocol+'_Mmus_NumberOfUMIs_list.txt',
+        mmus_nGenes_list="multigenome_C1HTsmall_V3/"+protocol+'_Mmus_NumberOfGenes_list.txt',
+        mmus_nFeatures_list="multigenome_C1HTsmall_V3/"+protocol+'_Mmus_NumberOfFeatures_list.txt',
+        species_list="multigenome_C1HTsmall_V3/"+protocol+'_Species_info_list.txt'
+        #vcfs_list="multigenome_C1HTsmall_V3/"+protocol+'_VCFs_list.txt'
+
+    run:
+
+        hsapExp_fout= open(output.hsapExp_list, 'w')
+        mmusExp_fout= open(output.mmusExp_list, 'w')
+        hsap_nReads_fout= open(output.hsap_nReads_list, 'w')
+        hsap_nGenes_fout= open(output.hsap_nGenes_list, 'w')
+        hsap_nUMIs_fout= open(output.hsap_nUMIs_list, 'w')
+        hsap_nFeatures_fout= open(output.hsap_nFeatures_list, 'w')
+        mmus_nReads_fout= open(output.mmus_nReads_list, 'w')
+        mmus_nGenes_fout= open(output.mmus_nGenes_list, 'w')
+        mmus_nUMIs_fout= open(output.mmus_nUMIs_list, 'w')
+        mmus_nFeatures_fout= open(output.mmus_nFeatures_list, 'w')
+        info_species_fout= open(output.species_list, 'w')
+
+        #hsapExp_fout.write(input.hsap_Exprs + " ")
+        #mmusExp_fout.write(input.mmus_Exprs + " ")
+        #hsap_nReads_fout.write(input.hsap_n_Reads + " ")
+        #hsap_nGenes_fout.write(input.hsap_n_Genes + " ")
+        #hsap_nUMIs_fout.write(input.hsap_n_UMIs + " ")
+        #hsap_nFeatures_fout.write(input.hsap_n_Features + " ")
+        #mmus_nReads_fout.write(input.mmus_n_Reads + " ")
+        #mmus_nGenes_fout.write(input.mmus_n_Genes + " ")
+        #mmus_nUMIs_fout.write(input.mmus_n_UMIs + " ")
+        #mmus_nFeatures_fout.write(input.mmus_n_Features + " ")
+        #info_species_fout.write(input.species_info + " ")
+        print(input.hsap_Exprs[0:5])
+        hsapExp_fout.write(" ".join(input.hsap_Exprs))
+        mmusExp_fout.write(" ".join(input.mmus_Exprs))
+        hsap_nReads_fout.write(" ".join(input.hsap_n_Reads))
+        hsap_nGenes_fout.write(" ".join(input.hsap_n_Genes))
+        hsap_nUMIs_fout.write(" ".join(input.hsap_n_UMIs))
+        hsap_nFeatures_fout.write(" ".join(input.hsap_n_Features))
+        mmus_nReads_fout.write(" ".join(input.mmus_n_Reads))
+        mmus_nGenes_fout.write(" ".join(input.mmus_n_Genes))
+        mmus_nUMIs_fout.write(" ".join(input.mmus_n_UMIs))
+        mmus_nFeatures_fout.write(" ".join(input.mmus_n_Features))
+        info_species_fout.write(" ".join(input.species_info))
+
+        hsapExp_fout.close()
+        mmusExp_fout.close()
+        hsap_nReads_fout.close()
+        hsap_nGenes_fout.close()
+        hsap_nUMIs_fout.close()
+        hsap_nFeatures_fout.close()
+        mmus_nReads_fout.close()
+        mmus_nGenes_fout.close()
+        mmus_nUMIs_fout.close()
+        mmus_nFeatures_fout.close()
+        info_species_fout.close()
+
+
+rule R_wrapper:
+    input:
+        hE_list="multigenome_C1HTsmall_V3/"+protocol+'_Hsap_expression_list.txt',
+        mE_list="multigenome_C1HTsmall_V3/"+protocol+'_Mmus_expression_list.txt',
+        h_nR_list="multigenome_C1HTsmall_V3/"+protocol+'_Hsap_NumberOfReads_list.txt',
+        h_nU_list="multigenome_C1HTsmall_V3/"+protocol+'_Hsap_NumberOfUMIs_list.txt',
+        h_nG_list="multigenome_C1HTsmall_V3/"+protocol+'_Hsap_NumberOfGenes_list.txt',
+        h_nF_list="multigenome_C1HTsmall_V3/"+protocol+'_Hsap_NumberOfFeatures_list.txt',
+        m_nR_list="multigenome_C1HTsmall_V3/"+protocol+'_Mmus_NumberOfReads_list.txt',
+        m_nU_list="multigenome_C1HTsmall_V3/"+protocol+'_Mmus_NumberOfUMIs_list.txt',
+        m_nG_list="multigenome_C1HTsmall_V3/"+protocol+'_Mmus_NumberOfGenes_list.txt',
+        m_nF_list="multigenome_C1HTsmall_V3/"+protocol+'_Mmus_NumberOfFeatures_list.txt',
+        spec_list="multigenome_C1HTsmall_V3/"+protocol+'_Species_info_list.txt'
+        #vcf_list="multigenome_C1HTsmall_V3/"+protocol+'_VCFs_list.txt'
+    output:
+        hsap_Robj= "multigenome_C1HTsmall_V3/"+protocol+".hsap.full.SCE.Robj",
+        mmus_Robj= "multigenome_C1HTsmall_V3/"+protocol+".mmus.full.SCE.Robj"
+    shell:
+        "Rscript wrapper_Robj_V4_withoutDonor.R --hsapExp {input.hE_list} --mmusExp {input.mE_list} --hnReads {input.h_nR_list} --hnUMI {input.h_nU_list} --hnGene {input.h_nG_list} --hnFeatures {input.h_nF_list} --mnReads {input.m_nR_list} --mnUMI {input.m_nU_list} --mnGene {input.m_nG_list} --mnFeatures {input.m_nF_list} --species {input.spec_list} --output_SCEobj ./multigenome_C1HTsmall_V3 --technology C1HTsmall"

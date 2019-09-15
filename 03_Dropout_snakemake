@@ -1,0 +1,25 @@
+
+shell.prefix("module unload gcc/latest; module load gcc/6.3.0; module load XZ/5.2.2; module load COREUTILS/8.21; module load CONDA/4.3.11_PYTHON3; module load java/latest; module load SAMTOOLS/1.6; module load BAMTOOLS/2.3.0 ; module load STAR/2.6.0c; module load R/3.5.0; module load hdf5/1.10.1; module load PIGZ/2.3.3; module load ZUMIS/2.2; ")
+
+print("test")
+
+TECHS = ["MARSseq"]#, "QUARTZseq", "CELseq2", "Dropseq", "SCRBseq", "X10Scilife", "X10Nuclei", "ICELL8", "ddSEQ", "ddSEQexp1", "CB1"]
+
+monocyte_dict = {'MARSseq': "CD14+ Monocytes", 'QUARTZseq': "CD14+ Monocytes", 'CELseq2': "CD14+ Monocytes",
+ 'Dropseq': "CD14+ Monocytes", 'SCRBseq': "CD14+ Monocytes", 'X10Nuclei': "CD14+ Monocytes", 'CB1': "CD14+ Monocytes",
+  'X10Scilife': "CD14+ and FCGR3A+ Monocytes",'ICELL8': "CD14+ and FCGR3A+ Monocytes",
+  'ddSEQ': "CD14+ and FCGR3A+ Monocytes",'ddSEQexp1': "CD14+ and FCGR3A+ Monocytes"}
+
+rule all:
+    input:
+        expand("SCDE_outputs/{tech}_SCDEoutputs.Robj", tech=TECHS)
+
+rule SCDE_run:
+    input:
+        seuratObjPath = "/project/devel/alafzi/SC_Protocols/Version3/Seurat_objects_renamed/{tech}_seurat.RData",
+        #monocyteAnnot= lambda wildcards: monocyte_dict[wildcards.tech], 
+        DSpath = "/project/devel/alafzi/SC_Protocols/Downsampling/DS_secondRound_rename/{tech}.hsap.full.SCE.jointDSmat.Robj"
+    output:
+        outpatch= "SCDE_outputs/{tech}_SCDEoutputs.Robj"
+    shell:
+        "Rscript 3_Dropout_wrapper.R --technology {wildcards.tech} --seuratObj_path {input.seuratObjPath}  --Monocyte_annot monocyte_dict[wildcards.tech] --DS_path {input.DSpath} --output_path ./SCDE_outputs"

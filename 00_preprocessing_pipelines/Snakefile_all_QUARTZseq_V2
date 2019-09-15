@@ -1,0 +1,205 @@
+from os import listdir
+
+#Path to sample fastq files
+fastq_path = '/project/devel/HCA/Riken/fastq_pool_merged'
+human_gtf = '/project/devel/alafzi/ref_genomes/human/hsa_gencode.v28.annotation.gtf'
+human_STAR_genome= '/project/devel/alafzi/ref_genomes/human/STARgenome'
+mouse_gtf = '/project/devel/alafzi/ref_genomes/mouse/mmu_gencode.vM17.primary_assembly.annotation.gtf'
+mouse_STAR_genome= '/project/devel/alafzi/ref_genomes/mouse/STARgenome'
+mixed_gtf = '/project/devel/alafzi/ref_genomes/mixed/hsap_mmus_can_combined_gtf.gtf'
+mixed_STAR_genome= '/project/devel/alafzi/ref_genomes/mixed/STARgenome'
+
+zUMI_path='/apps/ZUMIS/0.0.6'
+bc_list2= '/project/devel/HCA/Riken/QUARTZseq_cellBC.txt'
+protocol= 'QUARTZseq'
+
+#Loading modules
+#shell.executable("!/usr/bin/env bash")
+shell.prefix("module unload gcc/latest; module load gcc/6.3.0; module load XZ/5.2.2; module load CONDA/4.3.11_PYTHON3; module load java/latest; module load SAMTOOLS/1.6; module load BAMTOOLS/2.3.0 ; module load STAR/2.6.0c; module load R/3.5.0; module load hdf5/1.10.1; module load PIGZ/2.3.3; module load ZUMIS/0.0.6; ")
+
+#Samples
+sample_files = listdir(fastq_path)
+SAMPLES = list(set(i.split("_")[0] for i in sample_files))
+#SAMPLES = ["5568AA", "5571AA"]
+SPECIES = ["human", "mouse", "mixed"]
+
+rule all:
+    input:
+        "multigenome_QUARTZseq/hsap.full.SCE.Robj",
+        "multigenome_QUARTZseq/mmus.full.SCE.Robj"
+
+rule zUMI_run:
+    input:
+        fastq_R1=fastq_path+'/{sample}_1.fastq.gz',
+        fastq_R2=fastq_path+'/{sample}_2.fastq.gz'
+        #sample_id='{sample}'
+    output:
+        dir='multigenome_QUARTZseq/{sample}_human/'+protocol+'.aligned.sorted.bam',
+        dir_file1='multigenome_QUARTZseq/{sample}_human/zUMIs_output/stats/'+protocol+'.readspercell.txt',
+        dir_file11='multigenome_QUARTZseq/{sample}_human/'+protocol+'.barcodelist.filtered.sort.sam',
+        dir_file111='multigenome_QUARTZseq/{sample}_human/zUMIs_output/expression/'+protocol+'.dgecounts.rds',
+        dir_file1111='multigenome_QUARTZseq/{sample}_human/zUMIs_output/stats/'+protocol+'.genecounts.txt',
+        dir_file11111='multigenome_QUARTZseq/{sample}_human/zUMIs_output/stats/'+protocol+'.UMIcounts.txt',
+        dir_file111111='multigenome_QUARTZseq/{sample}_human/zUMIs_output/stats/'+protocol+'.features.txt',
+        dir2='multigenome_QUARTZseq/{sample}_mouse/'+protocol+'.aligned.sorted.bam',
+        dir_file2='multigenome_QUARTZseq/{sample}_mouse/zUMIs_output/stats/'+protocol+'.readspercell.txt',
+        dir_file22='multigenome_QUARTZseq/{sample}_mouse/'+protocol+'.barcodelist.filtered.sort.sam',
+        dir_file222='multigenome_QUARTZseq/{sample}_mouse/zUMIs_output/expression/'+protocol+'.dgecounts.rds',
+        dir_file2222='multigenome_QUARTZseq/{sample}_mouse/zUMIs_output/stats/'+protocol+'.genecounts.txt',
+        dir_file22222='multigenome_QUARTZseq/{sample}_mouse/zUMIs_output/stats/'+protocol+'.UMIcounts.txt',
+        dir_file222222='multigenome_QUARTZseq/{sample}_mouse/zUMIs_output/stats/'+protocol+'.features.txt',
+        dir3='multigenome_QUARTZseq/{sample}_mixed/'+protocol+'.aligned.sorted.bam',
+        dir_file3='multigenome_QUARTZseq/{sample}_mixed/zUMIs_output/stats/'+protocol+'.readspercell.txt',
+        dir_file33='multigenome_QUARTZseq/{sample}_mixed/'+protocol+'.barcodelist.filtered.sort.sam'
+
+    shell:
+        """
+        mkdir multigenome_QUARTZseq/{wildcards.sample}_human
+        mkdir multigenome_QUARTZseq/{wildcards.sample}_mouse
+        mkdir multigenome_QUARTZseq/{wildcards.sample}_mixed
+
+        cd multigenome_QUARTZseq/{wildcards.sample}_human
+        bash {zUMI_path}/zUMIs-master.sh -f {input.fastq_R1} -r {input.fastq_R2} -c 1-15 -m 16-23 -l 62 -g {human_STAR_genome} -a {human_gtf} -n {protocol} -p 8 -b {bc_list2} -x '--limitOutSJcollapsed 4000000 --limitSjdbInsertNsj 4000000' -i {zUMI_path} -o .
+        cd ../{wildcards.sample}_mouse
+        bash {zUMI_path}/zUMIs-master.sh -f {input.fastq_R1} -r {input.fastq_R2} -c 1-15 -m 16-23 -l 62 -g {mouse_STAR_genome} -a {mouse_gtf} -n {protocol} -p 8 -b {bc_list2} -x '--limitOutSJcollapsed 4000000 --limitSjdbInsertNsj 4000000' -i {zUMI_path} -o .
+        cd ../{wildcards.sample}_mixed
+        bash {zUMI_path}/zUMIs-master.sh -f {input.fastq_R1} -r {input.fastq_R2} -c 1-15 -m 16-23 -l 62 -g {mixed_STAR_genome} -a {mixed_gtf} -n {protocol} -p 8 -b {bc_list2} -x '--limitOutSJcollapsed 4000000 --limitSjdbInsertNsj 4000000' -i {zUMI_path} -o .
+        cd ../..
+        """
+        
+# So far by zUMI_run rule, we would have STAR alignment bam files, as well as quantifications and everything!
+# For the next step we want to demultiplex bam files of the mixed species
+
+# This rule combines the aligned.sorted.bam with the barcode information from hca04.barcodelist.filtered.sort.sam ! Basically, I split the barcode sequence into tags that get added to the aligned bam file.
+#So for each protocol I will need to adjust the ranges 
+rule cellBC_tag_bam:
+    input:
+        bam= 'multigenome_QUARTZseq/{sample}_mixed/'+protocol+'.aligned.sorted.bam',
+        bclist= 'multigenome_QUARTZseq/{sample}_mixed/'+protocol+'.barcodelist.filtered.sort.sam'
+    output:
+        'multigenome_QUARTZseq/{sample}_mixed/'+protocol+'.demuxready.bam'
+
+    shell:
+        """
+        rm multigenome_QUARTZseq/{wildcards.sample}_mixed/QUARTZseq.Log.final.out
+        rm multigenome_QUARTZseq/{wildcards.sample}_mixed/QUARTZseq.Log.out
+        rm multigenome_QUARTZseq/{wildcards.sample}_mixed/QUARTZseq.Log.progress.out
+        rm multigenome_QUARTZseq/{wildcards.sample}_mixed/QUARTZseq.SJ.out.tab
+        rm multigenome_QUARTZseq/{wildcards.sample}_mixed/QUARTZseq.aligned.sorted.bam.ex.featureCounts
+        rm multigenome_QUARTZseq/{wildcards.sample}_mixed/QUARTZseq.aligned.sorted.bam.in.featureCounts
+        rm - r multigenome_QUARTZseq/{wildcards.sample}_mixed/QUARTZseq._STARgenome
+        rm - r multigenome_QUARTZseq/{wildcards.sample}_mixed/QUARTZseq._STARpass1
+
+        cat <(samtools view -H {input.bam}) <(paste <(samtools view {input.bam} ) <(tail -n+2 {input.bclist} | awk 'BEGIN{{FS="\t";OFS="\t";}}{{if($0!~/^@/){{xc=substr($10,1,15);xm=substr($10,16,8);xcq=substr($11,1,15);xmq=substr($11,16,8);print "XC:Z:"xc"\tXM:Z:"xm"\tXI:Z:"xcq"\tXJ:Z:"xmq}}else{{print;}}}}' ) ) | samtools view -b -@ 2 -o {output}
+
+        """
+rule Big_Bam_to_SAM:
+    input: 
+        'multigenome_QUARTZseq/{sample}_mixed/'+protocol+'.demuxready.bam'
+    output: 
+        'multigenome_QUARTZseq/{sample}_mixed/'+protocol+'.demuxready.sam'
+    shell:
+        """
+        samtools view -h {input} > {output}
+        """
+
+rule cellBC_detected:
+    input:
+        reads_per_cell= 'multigenome_QUARTZseq/{sample}_mixed/zUMIs_output/stats/'+protocol+'.readspercell.txt'
+    output:
+        'multigenome_QUARTZseq/{sample}_mixed/cell_barcodes.txt'
+    shell:
+        """
+        cat {input.reads_per_cell} | cut -f1 | sed 's/\"//g' > {output}
+        """
+rule demux_cells:
+    input:
+        tagged_sam= 'multigenome_QUARTZseq/{sample}_mixed/'+protocol+'.demuxready.sam',
+        detected_BC= 'multigenome_QUARTZseq/{sample}_mixed/cell_barcodes.txt'
+    output:
+        demux_dir= 'multigenome_QUARTZseq/{sample}_mixed/demuxed_cells_sam'
+    shell:
+         """
+         mkdir {output.demux_dir}
+         python SAM_cellBC_demultiplexing_V3_corrected.py {input.tagged_sam} {input.detected_BC} {protocol} {wildcards.sample} {output.demux_dir}
+         """
+
+rule doublet_species:
+    input:
+        demux_dir= 'multigenome_QUARTZseq/{sample}_mixed/demuxed_cells_sam'
+    output:
+        out1= 'multigenome_QUARTZseq/{sample}_mixed/doublet_species/doublet_table.txt',
+        out2= 'multigenome_QUARTZseq/{sample}_mixed/doublet_species/doublet_table_reads.txt',
+        out3= 'multigenome_QUARTZseq/{sample}_mixed/doublet_species/Only_human_cell_IDs.txt',
+        out4= 'multigenome_QUARTZseq/{sample}_mixed/doublet_species/Only_mouse_cell_IDs.txt',
+        out5= 'multigenome_QUARTZseq/{sample}_mixed/doublet_species/Only_dog_cell_IDs.txt',
+        out6= 'multigenome_QUARTZseq/{sample}_mixed/doublet_species/Only_human_cell_IDs_BAMs.txt'
+
+    shell:
+        """
+        python doublet_rate_V2.py {input.demux_dir} {output.out1} {output.out2} {output.out3} {output.out4} {output.out5} {output.out6}
+
+        """
+
+rule prepare_R_inputs:
+    input:
+        hsap_Exprs= expand('multigenome_QUARTZseq/{sample}_human/zUMIs_output/expression/'+protocol+'.dgecounts.rds',sample=SAMPLES),
+        mmus_Exprs= expand('multigenome_QUARTZseq/{sample}_mouse/zUMIs_output/expression/'+protocol+'.dgecounts.rds',sample=SAMPLES),
+        hsap_n_Reads= expand('multigenome_QUARTZseq/{sample}_human/zUMIs_output/stats/'+protocol+'.readspercell.txt',sample=SAMPLES),
+        hsap_n_Genes= expand('multigenome_QUARTZseq/{sample}_human/zUMIs_output/stats/'+protocol+'.genecounts.txt',sample=SAMPLES),
+        hsap_n_UMIs= expand('multigenome_QUARTZseq/{sample}_human/zUMIs_output/stats/'+protocol+'.UMIcounts.txt',sample=SAMPLES),
+        hsap_n_Features= expand('multigenome_QUARTZseq/{sample}_human/zUMIs_output/stats/'+protocol+'.features.txt',sample=SAMPLES),
+        mmus_n_Reads= expand('multigenome_QUARTZseq/{sample}_mouse/zUMIs_output/stats/'+protocol+'.readspercell.txt',sample=SAMPLES),
+        mmus_n_Genes= expand('multigenome_QUARTZseq/{sample}_mouse/zUMIs_output/stats/'+protocol+'.genecounts.txt',sample=SAMPLES),
+        mmus_n_UMIs= expand('multigenome_QUARTZseq/{sample}_mouse/zUMIs_output/stats/'+protocol+'.UMIcounts.txt',sample=SAMPLES),
+        mmus_n_Features= expand('multigenome_QUARTZseq/{sample}_mouse/zUMIs_output/stats/'+protocol+'.features.txt',sample=SAMPLES),
+        species_info= expand('multigenome_QUARTZseq/{sample}_mixed/doublet_species/doublet_table_reads.txt',sample=SAMPLES),
+        #VCF_file= expand('multigenome_QUARTZseq/mpileup/{sample}.mpileup.full.vcf.gz',sample=SAMPLES)
+    
+    output:
+        hsapExp_list="multigenome_QUARTZseq/"+protocol+'_Hsap_expression_list.txt',
+        mmusExp_list="multigenome_QUARTZseq/"+protocol+'_Mmus_expression_list.txt',
+        hsap_nReads_list="multigenome_QUARTZseq/"+protocol+'_Hsap_NumberOfReads_list.txt',
+        hsap_nUMIs_list="multigenome_QUARTZseq/"+protocol+'_Hsap_NumberOfUMIs_list.txt',
+        hsap_nGenes_list="multigenome_QUARTZseq/"+protocol+'_Hsap_NumberOfGenes_list.txt',
+        hsap_nFeatures_list="multigenome_QUARTZseq/"+protocol+'_Hsap_NumberOfFeatures_list.txt',
+        mmus_nReads_list="multigenome_QUARTZseq/"+protocol+'_Mmus_NumberOfReads_list.txt',
+        mmus_nUMIs_list="multigenome_QUARTZseq/"+protocol+'_Mmus_NumberOfUMIs_list.txt',
+        mmus_nGenes_list="multigenome_QUARTZseq/"+protocol+'_Mmus_NumberOfGenes_list.txt',
+        mmus_nFeatures_list="multigenome_QUARTZseq/"+protocol+'_Mmus_NumberOfFeatures_list.txt',
+        species_list="multigenome_QUARTZseq/"+protocol+'_Species_info_list.txt',
+        #vcfs_list="multigenome_QUARTZseq/"+protocol+'_VCFs_list.txt'
+
+    shell:
+        """
+        echo -e "{input.hsap_Exprs}" >> {output.hsapExp_list}
+        echo -e "{input.mmus_Exprs}" >> {output.mmusExp_list}
+        echo -e "{input.hsap_n_Reads}" >> {output.hsap_nReads_list}
+        echo -e "{input.hsap_n_Genes}" >> {output.hsap_nGenes_list}
+        echo -e "{input.hsap_n_UMIs}" >> {output.hsap_nUMIs_list}
+        echo -e "{input.hsap_n_Features}" >> {output.hsap_nFeatures_list}
+        echo -e "{input.mmus_n_Reads}" >> {output.mmus_nReads_list}
+        echo -e "{input.mmus_n_Genes}" >> {output.mmus_nGenes_list}
+        echo -e "{input.mmus_n_UMIs}" >> {output.mmus_nUMIs_list}
+        echo -e "{input.mmus_n_Features}" >> {output.mmus_nFeatures_list}
+        echo -e "{input.species_info}" >> {output.species_list}
+        """
+rule R_wrapper:
+    input:
+        hE_list="multigenome_QUARTZseq/"+protocol+'_Hsap_expression_list.txt',
+        mE_list="multigenome_QUARTZseq/"+protocol+'_Mmus_expression_list.txt',
+        h_nR_list="multigenome_QUARTZseq/"+protocol+'_Hsap_NumberOfReads_list.txt',
+        h_nU_list="multigenome_QUARTZseq/"+protocol+'_Hsap_NumberOfUMIs_list.txt',
+        h_nG_list="multigenome_QUARTZseq/"+protocol+'_Hsap_NumberOfGenes_list.txt',
+        h_nF_list="multigenome_QUARTZseq/"+protocol+'_Hsap_NumberOfFeatures_list.txt',
+        m_nR_list="multigenome_QUARTZseq/"+protocol+'_Mmus_NumberOfReads_list.txt',
+        m_nU_list="multigenome_QUARTZseq/"+protocol+'_Mmus_NumberOfUMIs_list.txt',
+        m_nG_list="multigenome_QUARTZseq/"+protocol+'_Mmus_NumberOfGenes_list.txt',
+        m_nF_list="multigenome_QUARTZseq/"+protocol+'_Mmus_NumberOfFeatures_list.txt',
+        spec_list="multigenome_QUARTZseq/"+protocol+'_Species_info_list.txt',
+        #vcf_list="multigenome_QUARTZseq/"+protocol+'_VCFs_list.txt'
+    output:
+        hsap_Robj= "multigenome_QUARTZseq/hsap.full.SCE.Robj",
+        mmus_Robj= "multigenome_QUARTZseq/mmus.full.SCE.Robj"
+    shell:
+        "Rscript wrapper_Robj_V4_withoutDonor.R --hsapExp {input.hE_list} --mmusExp {input.mE_list} --hnReads {input.h_nR_list} --hnUMI {input.h_nU_list} --hnGene {input.h_nG_list} --hnFeatures {input.h_nF_list} --mnReads {input.m_nR_list} --mnUMI {input.m_nU_list} --mnGene {input.m_nG_list} --mnFeatures {input.m_nF_list} --species {input.spec_list} --vcfs {input.vcf_list} --output_SCEobj ./multigenome_QUARTZseq --technology QUARTZseq"

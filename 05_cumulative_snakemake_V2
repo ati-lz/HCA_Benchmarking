@@ -1,0 +1,21 @@
+
+shell.prefix("module unload gcc/latest; module load gcc/6.3.0; module load XZ/5.2.2; module load COREUTILS/8.21; module load CONDA/4.3.11_PYTHON3; module load java/latest; module load SAMTOOLS/1.6; module load BAMTOOLS/2.3.0 ; module load STAR/2.6.0c; module load R/3.5.0; module load hdf5/1.10.1; module load PIGZ/2.3.3; module load ZUMIS/2.2; ")
+
+print("test")
+
+TECHS = ["MARSseq", "QUARTZseq", "CELseq2", "Dropseq", "SCRBseq", "SMARTseqFINAL","Nuclei10X", "ICELL8", "ddSEQ", "1CB", "C1HTmedium", "C1HTsmall", "10X2x5K"]#, "SeqWellV2"]#, "SMARTseqFINAL"]
+
+
+rule all:
+    input:
+        expand("Cumulative_gene_final/{tech}_Cumulatives_V2.Robj", tech=TECHS)
+
+rule cumulative_run:
+    input:
+        seuratObjPath = "/project/devel/alafzi/SC_Protocols/Version3/Seurat_objects_final_rename/Human/{tech}_seu.obj.RData",
+        #monocyteAnnot= lambda wildcards: monocyte_dict[wildcards.tech], 
+        DSpath = "/project/devel/alafzi/SC_Protocols/Downsampling/DS_secondRound/Human/{tech}.hsap.full.SCE.jointDSmat.Robj"
+    output:
+        outpatch= "Cumulative_gene_final/{tech}_Cumulatives_V2.Robj"
+    shell:
+        "Rscript cumulative_wrapper_snakemake_V2.R --technology {wildcards.tech} --seuratObj_path {input.seuratObjPath} --DS_path {input.DSpath} --output_path ./Cumulative_gene_final"
