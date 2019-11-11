@@ -72,7 +72,7 @@ main <- function(technology, seuratObj_path, DS_path, output_path) {
       print(cell)
       sample.size = cell
       sample.gene.numbers <- rep(NA,50)
-      for (i in 1:50){
+      for (i in 1:50){ #is 100 in the final manuscript
         selected.cells <- sample(colnames(DS.mat.HEKS), sample.size)
         sample.gene.names <- rep(NA, 70000)
         for (cell2 in selected.cells){
@@ -103,7 +103,7 @@ main <- function(technology, seuratObj_path, DS_path, output_path) {
     print(cell)
     sample.size = cell
     sample.gene.numbers <- rep(NA,50)
-    for (i in 1:50){
+    for (i in 1:50){ #is 100 in the final manuscript
       selected.cells <- sample(colnames(DS.mat.Monocytes), sample.size)
       sample.gene.names <- rep(NA, 70000)
       for (cell2 in selected.cells){
@@ -135,7 +135,7 @@ main <- function(technology, seuratObj_path, DS_path, output_path) {
     print(cell)
     sample.size = cell
     sample.gene.numbers <- rep(NA,50)
-    for (i in 1:50){
+    for (i in 1:50){ #is 100 in the final manuscript
       selected.cells <- sample(colnames(DS.mat.Bcells), sample.size)
       sample.gene.names <- rep(NA, 70000)
       for (cell2 in selected.cells){
